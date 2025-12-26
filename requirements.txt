@@ -1,6 +1,6 @@
-fastapi
-uvicorn[standard]
-numpy
-python-multipart
-soundfile
-faster-whisper==1.2.1
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+faster-whisper==1.0.3
+soundfile==0.12.1
+numpy==1.26.4
+torch==2.2.2
