@@ -1,9 +1,6 @@
-soundfile
-numpy
 fastapi
 uvicorn[standard]
-faster-whisper
+numpy
 python-multipart
-torch==2.2.0+cu121
-torchaudio==2.2.0+cu121
--f https://download.pytorch.org/whl/torch_stable.html
+soundfile
+faster-whisper==1.2.1
