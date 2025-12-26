@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, HTTPException
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
@@ -20,10 +20,14 @@ async def health():
 
 @app.post("/transcribe")
 async def transcribe_audio(file: UploadFile):
-    pcm_bytes = await file.read()
-    audio = pcm16_to_float32(pcm_bytes)
+    try:
+        pcm_bytes = await file.read()
+        audio = pcm16_to_float32(pcm_bytes)
 
-    loop = asyncio.get_running_loop()
-    text = await loop.run_in_executor(EXECUTOR, transcribe, audio)
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(EXECUTOR, transcribe, audio)
 
-    return {"text": text}
+        return {"text": text}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
