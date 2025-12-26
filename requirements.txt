@@ -1,6 +1,5 @@
 fastapi
 uvicorn[standard]
-faster-whisper
 numpy
-soundfile
-torch
+faster-whisper
+python-multipart
