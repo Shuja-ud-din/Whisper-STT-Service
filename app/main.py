@@ -33,7 +33,7 @@ async def transcribe_pcm(file: UploadFile):
         return {"text": text}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @app.post("/transcribe-file")
@@ -54,4 +54,4 @@ async def transcribe_file(file: UploadFile):
         return {"text": text}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
