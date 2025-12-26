@@ -13,6 +13,11 @@ MAX_WORKERS = int(os.getenv("MAX_WORKERS", "8"))
 EXECUTOR = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.post("/transcribe")
 async def transcribe_audio(file: UploadFile):
     pcm_bytes = await file.read()
