@@ -1,6 +1,7 @@
+soundfile
+numpy
 fastapi
 uvicorn[standard]
-numpy
 faster-whisper
 python-multipart
 torch==2.2.0+cu121
