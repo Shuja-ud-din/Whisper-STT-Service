@@ -4,3 +4,4 @@ faster-whisper==1.0.3
 soundfile==0.12.1
 numpy==1.26.4
 torch==2.2.2
+requests==2.31.0
