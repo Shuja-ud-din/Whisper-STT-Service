@@ -1,47 +1,46 @@
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse
+import io
+import os
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from faster_whisper import WhisperModel
 import numpy as np
-import io
-from pydub import AudioSegment
 
-app = FastAPI(title="Faster Whisper API")
+api = FastAPI()
 
-# Load model once on GPU
-model_size = "small"  # choose small/base/medium/large
-model = WhisperModel(
-    model_size, device="cuda", compute_type="float16"
-)  # GPU float16 for speed
+# Initialize model globally for warm-start
+# 'float16' is best for NVIDIA GPUs (3090, A100, etc.)
+MODEL_SIZE = "small"
+model = WhisperModel(MODEL_SIZE, device="cuda", compute_type="float16")
 
 
-@app.get("/health")
+@api.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "healthy", "model": MODEL_SIZE, "device": "cuda"}
 
 
-@app.post("/transcribe")
-async def transcribe(raw_audio: bytes = File(...), sample_rate: int = 16000):
+@api.post("/transcribe")
+async def transcribe_raw(audio_bytes: bytes = File(...)):
+    """Transcribes raw audio bytes."""
     try:
-        audio = np.frombuffer(raw_audio, dtype=np.float32)
-        segments, info = model.transcribe(audio, beam_size=5)
-        text = " ".join([segment.text for segment in segments])
-        return {"text": text}
+        # Faster-whisper can take a binary stream
+        segments, info = model.transcribe(io.BytesIO(audio_bytes), beam_size=5)
+        results = [{"start": s.start, "end": s.end, "text": s.text} for s in segments]
+        return {"language": info.language, "transcription": results}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/transcribe-file")
-async def transcribe_file(file: UploadFile):
+@api.post("/transcribe-file")
+async def transcribe_file(file: UploadFile = File(...)):
+    """Transcribes an uploaded file (.wav, .mp3, etc.)"""
     try:
-        contents = await file.read()
-        audio_file = io.BytesIO(contents)
-        audio_segment = AudioSegment.from_file(audio_file)
-        audio_segment = audio_segment.set_channels(1).set_frame_rate(16000)
-        audio_np = (
-            np.array(audio_segment.get_array_of_samples()).astype(np.float32) / 32768.0
-        )
-        segments, info = model.transcribe(audio_np, beam_size=5)
-        text = " ".join([segment.text for segment in segments])
-        return {"text": text}
+        # Read file into memory
+        content = await file.read()
+        segments, info = model.transcribe(io.BytesIO(content), beam_size=5)
+        results = [{"start": s.start, "end": s.end, "text": s.text} for s in segments]
+        return {
+            "filename": file.filename,
+            "language": info.language,
+            "transcription": results,
+        }
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
