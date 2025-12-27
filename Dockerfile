@@ -1,36 +1,28 @@
-# Base image with CUDA for GPU acceleration
-FROM nvidia/cuda:12.1.105-cudnn8-runtime-ubuntu22.04
+# Use an available CUDA 12.1 image with cuDNN8 support
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
-# Set environment variables for CUDA
-ENV TORCH_CUDA_ARCH_LIST="All"
+# CUDA environment
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    ffmpeg \
-    python3.10 \
-    python3.10-venv \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+# install minimum base system dependencies and ffmpeg
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3.10 python3-pip python3.10-venv curl ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
+# upgrade pip
 RUN python3 -m pip install --upgrade pip
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements and install
-COPY requirements.txt .
+# copy dependencies file and install
+COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app
+# copy app
 COPY app/ /app/
 
-# Expose port
 EXPOSE 8000
 
-# Command to run
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "asyncio", "--http", "h11"]
