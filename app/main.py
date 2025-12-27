@@ -1,52 +1,47 @@
-import os
-import tempfile
-import numpy as np
-from fastapi import FastAPI, UploadFile, File, Body
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
+import numpy as np
+import io
+from pydub import AudioSegment
 
-app = FastAPI()
+app = FastAPI(title="Faster Whisper API")
 
-# ---- Model ----
+# Load model once on GPU
+model_size = "small"  # choose small/base/medium/large
 model = WhisperModel(
-    "small",
-    device="cuda",  # auto-falls back to CPU if no GPU
-    compute_type="float16",  # use "int8_float16" if VRAM constrained
-    cpu_threads=4,
-    num_workers=4,  # enables parallel decoding
-)
+    model_size, device="cuda", compute_type="float16"
+)  # GPU float16 for speed
 
 
-# ---- Health ----
 @app.get("/health")
-def health():
+async def health():
     return {"status": "ok"}
 
 
-# ---- Raw PCM ----
 @app.post("/transcribe")
-def transcribe_raw(
-    audio: bytes = Body(..., media_type="application/octet-stream"),
-    sample_rate: int = 16000,
-):
-    audio_np = np.frombuffer(audio, np.int16).astype(np.float32) / 32768.0
-
-    segments, info = model.transcribe(audio_np, beam_size=5, vad_filter=False)
-
-    text = "".join(seg.text for seg in segments)
-    return {"text": text.strip(), "language": info.language}
-
-
-# ---- File Upload ----
-@app.post("/transcribe-file")
-async def transcribe_file(file: UploadFile = File(...)):
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
-
+async def transcribe(raw_audio: bytes = File(...), sample_rate: int = 16000):
     try:
-        segments, info = model.transcribe(tmp_path, beam_size=5, vad_filter=False)
-    finally:
-        os.unlink(tmp_path)
+        audio = np.frombuffer(raw_audio, dtype=np.float32)
+        segments, info = model.transcribe(audio, beam_size=5)
+        text = " ".join([segment.text for segment in segments])
+        return {"text": text}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-    text = "".join(seg.text for seg in segments)
-    return {"filename": file.filename, "text": text.strip(), "language": info.language}
+
+@app.post("/transcribe-file")
+async def transcribe_file(file: UploadFile):
+    try:
+        contents = await file.read()
+        audio_file = io.BytesIO(contents)
+        audio_segment = AudioSegment.from_file(audio_file)
+        audio_segment = audio_segment.set_channels(1).set_frame_rate(16000)
+        audio_np = (
+            np.array(audio_segment.get_array_of_samples()).astype(np.float32) / 32768.0
+        )
+        segments, info = model.transcribe(audio_np, beam_size=5)
+        text = " ".join([segment.text for segment in segments])
+        return {"text": text}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
