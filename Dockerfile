@@ -31,9 +31,9 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir -r requirements.txt
 
-# Pre-download the model (large-v3) to the image
+# Pre-download the model (small) to the image
 # We set local_files_only=False here to download it during build
-RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('large-v3', device='cpu', compute_type='int8')"
+RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
 
 COPY . .
 
