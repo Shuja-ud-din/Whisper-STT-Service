@@ -3,10 +3,15 @@ import torch
 import whisper
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Body
-from multiprocessing import Process, Queue, Manager
+from multiprocessing import Process, Queue, Manager, set_start_method
 import asyncio
 import tempfile
 import soundfile as sf
+
+# -------------------------------
+# Force 'spawn' start method for CUDA in multiprocess
+# -------------------------------
+set_start_method("spawn", force=True)
 
 # -------------------------------
 # Shared objects
@@ -43,6 +48,7 @@ def worker_main(worker_id, request_queue, results_dict):
                     audio_np, fp16=(device == "cuda"), beam_size=3
                 )
             results_dict[request_id] = result["text"]
+
         except Exception as e:
             results_dict[request_id] = f"ERROR: {str(e)}"
 
@@ -68,14 +74,12 @@ async def enqueue_request(audio_np):
     request_id = f"req_{request_counter}"
     request_counter += 1
 
-    fut = loop.create_future()
-    results_dict[request_id] = fut
     request_queue.put((request_id, audio_np))
 
     # Wait until worker sets the result
     while True:
         await asyncio.sleep(0.01)
-        if isinstance(results_dict[request_id], str):
+        if request_id in results_dict and isinstance(results_dict[request_id], str):
             text = results_dict.pop(request_id)
             return text
 
