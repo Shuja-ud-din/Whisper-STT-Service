@@ -1,17 +1,25 @@
 import io
+import os
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from faster_whisper import WhisperModel
 
-# Use "app" as the variable name
 app = FastAPI()
 
 MODEL_SIZE = "small"
-# Pre-loading the model on the GPU
-model = WhisperModel(MODEL_SIZE, device="cuda", compute_type="float16")
+
+# Load model on startup
+try:
+    # float16 is optimal for RunPod GPUs (3090, A100, etc.)
+    model = WhisperModel(MODEL_SIZE, device="cuda", compute_type="float16")
+except Exception as e:
+    print(f"CRITICAL: Failed to load model on GPU: {e}")
+    model = None
 
 
 @app.get("/health")
 async def health():
+    if model is None:
+        raise HTTPException(status_code=500, detail="Model failed to initialize")
     return {"status": "healthy", "model": MODEL_SIZE, "device": "cuda"}
 
 
