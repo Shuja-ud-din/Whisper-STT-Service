@@ -1,57 +1,63 @@
 import os
-from fastapi import FastAPI, UploadFile, HTTPException
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
-import io
-import soundfile as sf
+import torch
+import whisper
+import tempfile
 import numpy as np
-
-from app.audio import pcm16_to_float32
-from app.model import transcribe  # your Faster-Whisper wrapper
+from fastapi import FastAPI, UploadFile, File, Body
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# Controls parallel GPU jobs
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", "8"))
-EXECUTOR = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+# ---- Model Load (once per container) ----
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = whisper.load_model("small", device=device)
 
 
+# ---- Health ----
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+def health():
+    return {
+        "status": "ok",
+        "device": device,
+        "gpu_available": torch.cuda.is_available(),
+    }
 
 
+# ---- Transcribe RAW PCM audio ----
 @app.post("/transcribe")
-async def transcribe_pcm(file: UploadFile):
-    """Raw PCM16 bytes"""
-    try:
-        pcm_bytes = await file.read()
-        audio = pcm16_to_float32(pcm_bytes)
+def transcribe_raw(
+    audio: bytes = Body(..., media_type="application/octet-stream"),
+    sample_rate: int = 16000,
+):
+    """
+    Expects:
+    - Raw PCM16 audio
+    - Mono
+    - Default sample rate: 16kHz
+    """
 
-        loop = asyncio.get_running_loop()
-        text = await loop.run_in_executor(EXECUTOR, transcribe, audio)
-        return {"text": text}
+    # bytes -> float32 numpy
+    audio_np = np.frombuffer(audio, np.int16).astype(np.float32) / 32768.0
 
-    except Exception as e:
-        return {"error": str(e)}
+    result = model.transcribe(audio_np, fp16=(device == "cuda"), language=None)
+
+    return {"text": result["text"], "language": result.get("language")}
 
 
+# ---- Transcribe audio file ----
 @app.post("/transcribe-file")
-async def transcribe_file(file: UploadFile):
-    """Standard audio files (.wav, .mp3, etc)"""
+async def transcribe_file(file: UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
     try:
-        audio_bytes = await file.read()
-        # Decode audio using soundfile
-        f = io.BytesIO(audio_bytes)
-        data, samplerate = sf.read(f, dtype="float32")
+        result = model.transcribe(tmp_path, fp16=(device == "cuda"), language=None)
+    finally:
+        os.unlink(tmp_path)
 
-        # If stereo, convert to mono
-        if len(data.shape) > 1:
-            data = np.mean(data, axis=1)
-
-        loop = asyncio.get_running_loop()
-        text = await loop.run_in_executor(EXECUTOR, transcribe, data)
-        return {"text": text}
-
-    except Exception as e:
-        return {"error": str(e)}
+    return {
+        "filename": file.filename,
+        "text": result["text"],
+        "language": result.get("language"),
+    }
