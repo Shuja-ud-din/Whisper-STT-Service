@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Install CUDA (runtime only) ----
+# ---- CUDA runtime ----
 RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb -o cuda-keyring.deb && \
     dpkg -i cuda-keyring.deb && \
     apt-get update && \
@@ -21,8 +21,8 @@ RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu22
     rm -rf /var/lib/apt/lists/* cuda-keyring.deb
 
 ENV CUDA_HOME=/usr/local/cuda
-ENV PATH=$CUDA_HOME/bin:$PATH
-ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 
 # ---- Python deps ----
 WORKDIR /app
@@ -30,12 +30,6 @@ COPY requirements.txt .
 
 RUN pip install --upgrade pip && \
     pip install --extra-index-url https://download.pytorch.org/whl/cu121 -r requirements.txt
-
-# ---- Pre-download Whisper Small ----
-RUN python - <<EOF
-import whisper
-whisper.load_model("small")
-EOF
 
 # ---- App ----
 COPY app ./app
