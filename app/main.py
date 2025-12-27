@@ -1,48 +1,52 @@
-import io
 import os
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import tempfile
+import numpy as np
+from fastapi import FastAPI, UploadFile, File, Body
 from faster_whisper import WhisperModel
 
 app = FastAPI()
 
-MODEL_SIZE = "small"
+# ---- Model ----
+model = WhisperModel(
+    "small",
+    device="cuda",  # auto-falls back to CPU if no GPU
+    compute_type="float16",  # use "int8_float16" if VRAM constrained
+    cpu_threads=4,
+    num_workers=4,  # enables parallel decoding
+)
 
-# Load model on startup
-try:
-    # float16 is optimal for RunPod GPUs (3090, A100, etc.)
-    model = WhisperModel(MODEL_SIZE, device="cuda", compute_type="float16")
-except Exception as e:
-    print(f"CRITICAL: Failed to load model on GPU: {e}")
-    model = None
 
-
+# ---- Health ----
 @app.get("/health")
-async def health():
-    if model is None:
-        raise HTTPException(status_code=500, detail="Model failed to initialize")
-    return {"status": "healthy", "model": MODEL_SIZE, "device": "cuda"}
+def health():
+    return {"status": "ok"}
 
 
+# ---- Raw PCM ----
 @app.post("/transcribe")
-async def transcribe_raw(audio_bytes: bytes = File(...)):
-    try:
-        segments, info = model.transcribe(io.BytesIO(audio_bytes), beam_size=5)
-        results = [{"start": s.start, "end": s.end, "text": s.text} for s in segments]
-        return {"language": info.language, "transcription": results}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def transcribe_raw(
+    audio: bytes = Body(..., media_type="application/octet-stream"),
+    sample_rate: int = 16000,
+):
+    audio_np = np.frombuffer(audio, np.int16).astype(np.float32) / 32768.0
+
+    segments, info = model.transcribe(audio_np, beam_size=5, vad_filter=False)
+
+    text = "".join(seg.text for seg in segments)
+    return {"text": text.strip(), "language": info.language}
 
 
+# ---- File Upload ----
 @app.post("/transcribe-file")
 async def transcribe_file(file: UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
     try:
-        content = await file.read()
-        segments, info = model.transcribe(io.BytesIO(content), beam_size=5)
-        results = [{"start": s.start, "end": s.end, "text": s.text} for s in segments]
-        return {
-            "filename": file.filename,
-            "language": info.language,
-            "transcription": results,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        segments, info = model.transcribe(tmp_path, beam_size=5, vad_filter=False)
+    finally:
+        os.unlink(tmp_path)
+
+    text = "".join(seg.text for seg in segments)
+    return {"filename": file.filename, "text": text.strip(), "language": info.language}
