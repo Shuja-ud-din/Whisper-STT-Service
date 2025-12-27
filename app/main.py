@@ -25,23 +25,14 @@ def health():
 
 # ---- Transcribe RAW PCM audio ----
 @app.post("/transcribe")
-def transcribe_raw(
-    audio: bytes = Body(..., media_type="application/octet-stream"),
-    sample_rate: int = 16000,
-):
-    """
-    Expects:
-    - Raw PCM16 audio
-    - Mono
-    - Default sample rate: 16kHz
-    """
+def transcribe_raw(audio: bytes = Body(..., media_type="application/octet-stream")):
+    if len(audio) % 2 != 0:
+        return {"error": "Invalid PCM buffer length"}
 
-    # bytes -> float32 numpy
     audio_np = np.frombuffer(audio, np.int16).astype(np.float32) / 32768.0
 
-    result = model.transcribe(audio_np, fp16=(device == "cuda"), language=None)
-
-    return {"text": result["text"], "language": result.get("language")}
+    result = model.transcribe(audio_np, fp16=(device == "cuda"))
+    return {"text": result["text"]}
 
 
 # ---- Transcribe audio file ----
